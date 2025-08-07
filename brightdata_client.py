@@ -27,7 +27,7 @@ class BrightDataClient:
         self.api_key = api_key
         self.dataset_id = dataset_id
         self.timeout = timeout
-        self.base_url = "https://api.brightdata.com/dca"
+        self.base_url = "https://api.brightdata.com/datasets/v3"
         self.session = requests.Session()
         self.session.headers.update({
             'Authorization': f'Bearer {api_key}',
@@ -37,41 +37,45 @@ class BrightDataClient:
         # ログ設定
         self.logger = logging.getLogger(__name__)
     
-    def trigger_scraping_job(self, urls: List[str], 
-                           country: str = "JP",
-                           additional_params: Optional[Dict] = None) -> Dict[str, Any]:
+    def trigger_keyword_scraping(self, keywords: List[str], 
+                               country: str = "JP",
+                               num_posts_per_keyword: int = 200) -> Dict[str, Any]:
         """
-        スクレイピングジョブを開始
+        キーワードベースのスクレイピングジョブを開始
         
         Args:
-            urls: スクレイピング対象のURL一覧
+            keywords: 検索キーワード一覧
             country: 対象国（JP=日本）
-            additional_params: 追加パラメータ
+            num_posts_per_keyword: キーワードあたりの投稿数
             
         Returns:
             ジョブ情報（snapshot_idを含む）
         """
         try:
-            # ジョブパラメータ構築
-            job_params = {
+            # リクエストボディ構築（JSON配列形式）
+            request_data = []
+            for keyword in keywords:
+                request_data.append({
+                    "search_keyword": keyword,
+                    "country": country,
+                    "num_of_posts": num_posts_per_keyword
+                })
+            
+            self.logger.info(f"キーワードスクレイピングジョブ開始: {len(keywords)}件のキーワード")
+            
+            # API呼び出し（新しいエンドポイント形式）
+            url = f"{self.base_url}/trigger"
+            params = {
                 "dataset_id": self.dataset_id,
-                "country": country,
-                "urls": urls,
-                "format": "json",
-                "webhook_notification_url": None,
-                "notify_on": ["success", "error"]
+                "include_errors": "true",
+                "type": "discover_new",
+                "discover_by": "keyword"
             }
             
-            # 追加パラメータをマージ
-            if additional_params:
-                job_params.update(additional_params)
-            
-            self.logger.info(f"スクレイピングジョブ開始: {len(urls)}件のURL")
-            
-            # API呼び出し
             response = self.session.post(
-                f"{self.base_url}/trigger",
-                json=job_params,
+                url,
+                params=params,
+                json=request_data,
                 timeout=self.timeout
             )
             
@@ -82,7 +86,7 @@ class BrightDataClient:
             return result
             
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"スクレイピングジョブ開始エラー: {e}")
+            self.logger.error(f"キーワードスクレイピングジョブ開始エラー: {e}")
             raise
         except Exception as e:
             self.logger.error(f"予期しないエラー: {e}")
@@ -100,8 +104,7 @@ class BrightDataClient:
         """
         try:
             response = self.session.get(
-                f"{self.base_url}/get_snapshot_status",
-                params={"snapshot_id": snapshot_id},
+                f"{self.base_url}/snapshot/{snapshot_id}",
                 timeout=self.timeout
             )
             
@@ -166,11 +169,8 @@ class BrightDataClient:
         """
         try:
             response = self.session.get(
-                f"{self.base_url}/get_snapshot_data",
-                params={
-                    "snapshot_id": snapshot_id,
-                    "format": "json"
-                },
+                f"{self.base_url}/snapshot/{snapshot_id}",
+                params={"format": "json"},
                 timeout=self.timeout
             )
             
@@ -180,7 +180,12 @@ class BrightDataClient:
             content_type = response.headers.get('content-type', '')
             
             if 'application/json' in content_type:
-                return response.json()
+                data = response.json()
+                # データが配列の場合はそのまま、オブジェクトの場合はdataフィールドを取得
+                if isinstance(data, list):
+                    return data
+                else:
+                    return data.get('data', [])
             else:
                 # NDJSON形式の場合
                 results = []
@@ -195,6 +200,18 @@ class BrightDataClient:
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON解析エラー: {e}")
             raise
+    
+    def get_job_results(self, snapshot_id: str) -> List[Dict[str, Any]]:
+        """
+        ジョブ結果を取得（get_resultsのエイリアス）
+        
+        Args:
+            snapshot_id: ジョブのスナップショットID
+            
+        Returns:
+            スクレイピング結果のリスト
+        """
+        return self.get_results(snapshot_id)
     
     def scrape_tiktok_discover_pages(self, country: str = "JP") -> List[Dict[str, Any]]:
         """

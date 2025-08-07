@@ -182,25 +182,55 @@ class TikTokBrightDataSystem:
         """発見ページから動画を収集"""
         self.logger.info("TikTok発見ページから収集中...")
         
+        # 発見ページ向けのキーワード（一般的なトレンドキーワード）
+        discover_keywords = [
+            "viral", "trending", "fyp", "foryou", "popular"
+        ]
+        
         target_region = self.config['collection_settings'].get('target_region', 'JP')
-        return self.bright_data_client.scrape_tiktok_discover_pages(country=target_region)
+        
+        # 新しいキーワード検索APIを使用
+        job_result = self.bright_data_client.trigger_keyword_scraping(
+            keywords=discover_keywords,
+            country=target_region,
+            num_posts_per_keyword=100  # キーワードあたり100件
+        )
+        
+        # ジョブ完了を待機してデータを取得
+        snapshot_id = job_result.get('snapshot_id')
+        if snapshot_id:
+            return self._wait_and_get_results(snapshot_id)
+        else:
+            self.logger.error("スナップショットIDが取得できませんでした")
+            return []
     
     def _collect_from_hashtags(self) -> List[Dict[str, Any]]:
         """人気ハッシュタグから動画を収集"""
         self.logger.info("人気ハッシュタグから収集中...")
         
-        # 日本で人気のハッシュタグ
+        # 日本で人気のハッシュタグ（#付きで統一）
         popular_hashtags = [
-            "fyp", "foryou", "viral", "trending", "おすすめ",
-            "バズ", "話題", "人気", "トレンド", "日本",
-            "東京", "大阪", "グルメ", "ファッション", "音楽"
+            "#fyp", "#foryou", "#viral", "#trending", "#おすすめ",
+            "#バズ", "#話題", "#人気", "#トレンド", "#日本",
+            "#東京", "#大阪", "#グルメ", "#ファッション", "#音楽"
         ]
         
         target_region = self.config['collection_settings'].get('target_region', 'JP')
-        return self.bright_data_client.scrape_hashtag_posts(
-            hashtags=popular_hashtags,
-            country=target_region
+        
+        # 新しいキーワード検索APIを使用
+        job_result = self.bright_data_client.trigger_keyword_scraping(
+            keywords=popular_hashtags,
+            country=target_region,
+            num_posts_per_keyword=50  # ハッシュタグあたり50件
         )
+        
+        # ジョブ完了を待機してデータを取得
+        snapshot_id = job_result.get('snapshot_id')
+        if snapshot_id:
+            return self._wait_and_get_results(snapshot_id)
+        else:
+            self.logger.error("スナップショットIDが取得できませんでした")
+            return []
     
     def _collect_hybrid(self) -> List[Dict[str, Any]]:
         """ハイブリッド収集（発見ページ + ハッシュタグ）"""
@@ -235,6 +265,56 @@ class TikTokBrightDataSystem:
                 unique_videos.append(video)
         
         return unique_videos
+    
+    def _wait_and_get_results(self, snapshot_id: str, max_wait_time: int = 600) -> List[Dict[str, Any]]:
+        """
+        ジョブ完了を待機して結果を取得
+        
+        Args:
+            snapshot_id: ジョブのスナップショットID
+            max_wait_time: 最大待機時間（秒）
+            
+        Returns:
+            収集された動画データリスト
+        """
+        import time
+        
+        self.logger.info(f"ジョブ完了待機中: {snapshot_id}")
+        
+        start_time = time.time()
+        while time.time() - start_time < max_wait_time:
+            try:
+                # ジョブステータス確認
+                status = self.bright_data_client.get_job_status(snapshot_id)
+                job_status = status.get('status', 'unknown')
+                
+                self.logger.info(f"ジョブステータス: {job_status}")
+                
+                if job_status == 'completed':
+                    # 結果取得
+                    results = self.bright_data_client.get_job_results(snapshot_id)
+                    self.logger.info(f"結果取得完了: {len(results)}件")
+                    return results
+                    
+                elif job_status == 'failed':
+                    self.logger.error(f"ジョブ失敗: {snapshot_id}")
+                    return []
+                    
+                elif job_status in ['running', 'pending']:
+                    # 30秒待機
+                    time.sleep(30)
+                    continue
+                    
+                else:
+                    self.logger.warning(f"不明なステータス: {job_status}")
+                    time.sleep(30)
+                    
+            except Exception as e:
+                self.logger.error(f"ジョブステータス確認エラー: {e}")
+                time.sleep(30)
+        
+        self.logger.error(f"ジョブ完了待機タイムアウト: {snapshot_id}")
+        return []
     
     def upload_to_sheets(self, videos: List[Dict[str, Any]], 
                         worksheet_name: Optional[str] = None) -> Dict[str, Any]:
