@@ -1,0 +1,17 @@
+requests==2.31.0
+google-auth==2.23.3
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.103.0
+gspread==5.11.3
+pandas==2.1.1
+python-dateutil==2.8.2
+pytz==2023.3
+langdetect==1.0.9
+beautifulsoup4==4.12.2
+lxml==4.9.3
+openpyxl==3.1.2
+colorama==0.4.6
+tqdm==4.66.1
+schedule==1.2.0
+

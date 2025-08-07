@@ -1,0 +1,35 @@
+{
+  "bright_data": {
+    "api_key": "YOUR_BRIGHT_DATA_API_KEY",
+    "api_endpoint": "https://api.brightdata.com/dca/trigger",
+    "dataset_id": "gd_l7q7dkf244hwjntr0",
+    "timeout": 300,
+    "max_retries": 3
+  },
+  "google_sheets": {
+    "credentials_file": "credentials.json",
+    "spreadsheet_name": "TikTok バイラル動画分析",
+    "worksheet_name": "24時間以内・50万再生以上"
+  },
+  "collection_settings": {
+    "target_region": "JP",
+    "min_views": 500000,
+    "time_range_hours": 24,
+    "max_videos_per_run": 500,
+    "exclude_verified": true,
+    "languages": ["ja", "jp"]
+  },
+  "output_settings": {
+    "csv_output": true,
+    "json_output": true,
+    "auto_upload_sheets": true,
+    "backup_enabled": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "tiktok_brightdata.log",
+    "max_size_mb": 10,
+    "backup_count": 5
+  }
+}
+
